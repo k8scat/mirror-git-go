@@ -14,6 +14,7 @@ import (
 	"github.com/k8scat/mirror-git-go/pkg/e_gitee_v8"
 	"github.com/k8scat/mirror-git-go/pkg/github"
 	"github.com/k8scat/mirror-git-go/pkg/gitlab"
+	"github.com/k8scat/mirror-git-go/pkg/local"
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
 
@@ -44,6 +45,8 @@ func main() {
 		targetGit = gitlab.NewGitLabFromEnv()
 	case "github":
 		targetGit = github.NewGitHubFromEnv()
+	case "local":
+		targetGit = &local.Local{}
 	default:
 		slog.Error("invalid target type", "type", targetType)
 		os.Exit(1)
@@ -59,8 +62,11 @@ func main() {
 	<-ch
 	slog.Info("received interrupt signal, exiting...")
 
-	if err := os.RemoveAll(cloneDir); err != nil {
-		slog.Error("remove clone dir failed", "error", err, "clone_dir", cloneDir)
+	if targetType != "local" {
+		slog.Info("cleaning up clone directory", "dir", cloneDir)
+		if err := os.RemoveAll(cloneDir); err != nil {
+			slog.Error("remove clone dir failed", "error", err, "clone_dir", cloneDir)
+		}
 	}
 }
 
@@ -128,13 +134,17 @@ func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
 func mirrorGiteeRepo(repo types.Repo, source types.SourceGit, target types.TargetGit) error {
 	slog.Info("mirror repo", "repo", repo.GetPathWithNamespace())
 
-	repo_dir := cloneDir + "/" + repo.GetPath() + "_" + time.Now().Format("20060102150405")
-	defer os.RemoveAll(repo_dir)
+	repoDir := cloneDir + "/" + repo.GetPath() + "_" + time.Now().Format("20060102150405")
 
 	gitUrl := source.GetRepoAddr(repo.GetPathWithNamespace())
-	cloneCmd := []string{
-		"git", "clone", "--bare", gitUrl, repo_dir,
+
+	var cloneCmd []string
+	if target.Name() == "local" {
+		cloneCmd = []string{"git", "clone", gitUrl, repoDir}
+	} else {
+		cloneCmd = []string{"git", "clone", "--bare", gitUrl, repoDir}
 	}
+
 	slog.Info("clone repo", "cmd", cloneCmd)
 	cmd := exec.Command(cloneCmd[0], cloneCmd[1:]...)
 	cmd.Stdout = os.Stdout
@@ -159,19 +169,23 @@ func mirrorGiteeRepo(repo types.Repo, source types.SourceGit, target types.Targe
 		}
 	}
 
-	pushCmd := []string{
-		"git", "push", "--mirror", target.GetRepoAddr(repo.GetPath()),
+	pushAddr := target.GetRepoAddr(repo.GetPath())
+	if pushAddr != "" {
+		pushCmd := []string{
+			"git", "push", "--mirror", pushAddr,
+		}
+		slog.Info("push repo", "cmd", pushCmd)
+		cmd = exec.Command(pushCmd[0], pushCmd[1:]...)
+		cmd.Dir = repoDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			slog.Error("push repo failed", "error", err, "cmd", pushCmd)
+			return fmt.Errorf("push failed: %w", err)
+		}
 	}
-	slog.Info("push repo", "cmd", pushCmd)
-	cmd = exec.Command(pushCmd[0], pushCmd[1:]...)
-	cmd.Dir = repo_dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		slog.Error("push repo failed", "error", err, "cmd", pushCmd)
-		return fmt.Errorf("push failed: %w", err)
-	}
+
 	slog.Info("mirror repo success", "repo", repo.GetPathWithNamespace())
 
 	return nil

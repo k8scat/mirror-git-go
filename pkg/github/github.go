@@ -8,12 +8,20 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/k8scat/mirror-git-go/pkg/types"
 )
+
+var _ types.TargetGit = &GitHub{}
 
 type GitHub struct {
 	AccessToken string
 	Username    string
 	BaseAPI     string
+}
+
+func (g *GitHub) Name() string {
+	return "github"
 }
 
 // GraphQL request structure
@@ -58,6 +66,7 @@ func NewGitHub(username, accessToken string) *GitHub {
 	}
 }
 
+// NewGitHubFromEnv creates a new GitHub client from environment variables
 func NewGitHubFromEnv() *GitHub {
 	return &GitHub{
 		Username:    os.Getenv("GITHUB_USERNAME"),

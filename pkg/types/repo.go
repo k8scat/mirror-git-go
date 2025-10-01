@@ -1,9 +1,16 @@
 package types
 
 type Repo interface {
+	// GetPath returns the repository path (name)
 	GetPath() string
+
+	// GetPathWithNamespace returns the repository path with namespace (e.g., group/project)
 	GetPathWithNamespace() string
+
+	// GetDesc returns the repository description
 	GetDesc() string
+
+	// GetPrivate returns whether the repository is private
 	GetPrivate() bool
 }
 

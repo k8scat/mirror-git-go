@@ -22,6 +22,10 @@ type GitLab struct {
 	BaseAPI     string
 }
 
+func (g *GitLab) Name() string {
+	return "gitlab"
+}
+
 // NewGitLab creates a new GitLab client
 func NewGitLab(username, accessToken string) *GitLab {
 	return &GitLab{
@@ -31,6 +35,7 @@ func NewGitLab(username, accessToken string) *GitLab {
 	}
 }
 
+// NewGitLabFromEnv creates a new GitLab client from environment variables
 func NewGitLabFromEnv() *GitLab {
 	return &GitLab{
 		Username:    os.Getenv("GITLAB_USERNAME"),
@@ -63,7 +68,6 @@ type AccessLevel struct {
 	Description string `json:"access_level_description"`
 }
 
-// IsRepoExist checks if a repository exists
 func (g *GitLab) IsRepoExist(repoName string) (bool, error) {
 	// Get single project: GET /projects/:id
 	// Use URL encoding for the project path
@@ -111,7 +115,6 @@ func (g *GitLab) IsRepoExist(repoName string) (bool, error) {
 	return false, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(b))
 }
 
-// CreateRepo creates a new repository
 func (g *GitLab) CreateRepo(name, desc string, isPrivate bool) error {
 	visibility := "public"
 	if isPrivate {

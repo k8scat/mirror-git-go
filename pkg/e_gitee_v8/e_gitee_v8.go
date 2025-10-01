@@ -14,10 +14,16 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+var _ types.SourceGit = &EnterpriseGiteeV8{}
+
 type EnterpriseGiteeV8 struct {
 	EnterpriseId string
 	Username     string
 	AccessToken  string
+}
+
+func (g *EnterpriseGiteeV8) Name() string {
+	return "e_gitee_v8"
 }
 
 func NewEnterpriseGiteeV8(enterpriseId, accessToken, username string) *EnterpriseGiteeV8 {

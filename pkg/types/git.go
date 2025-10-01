@@ -1,12 +1,26 @@
 package types
 
-type TargetGit interface {
-	IsRepoExist(repoName string) (bool, error)
-	CreateRepo(name string, desc string, private bool) error
+type Git interface {
+	// Name returns the name of the Git service
+	Name() string
+
+	// GetRepoAddr returns the repository address
 	GetRepoAddr(repoName string) string
 }
 
+type TargetGit interface {
+	Git
+
+	// IsRepoExist checks if a repository exists
+	IsRepoExist(repoName string) (bool, error)
+
+	// CreateRepo creates a new repository
+	CreateRepo(name string, desc string, private bool) error
+}
+
 type SourceGit interface {
+	Git
+
+	// ListRepos lists all repositories
 	ListRepos() ([]Repo, error)
-	GetRepoAddr(repoName string) string
 }
