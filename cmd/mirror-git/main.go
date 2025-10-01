@@ -101,19 +101,13 @@ func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
 		sem <- struct{}{} // Acquire a token
 
 		go func(r types.Repo) {
-			defer func() {
-				if e := recover(); e != nil {
-					slog.Error("mirror repo panic", "error", e, "repo", r.GetPathWithNamespace())
-					failedReposLock.Lock()
-					defer failedReposLock.Unlock()
-					failedRepos = append(failedRepos, []string{r.GetPathWithNamespace(), fmt.Sprintf("panic: %v", e)})
-				}
-			}()
 			defer func() { <-sem }() // Release the token
 
 			err := mirrorGiteeRepo(repo, sourceGit, targetGit)
 			if err != nil {
+				failedReposLock.Lock()
 				failedRepos = append(failedRepos, []string{repo.GetPathWithNamespace(), err.Error()})
+				failedReposLock.Unlock()
 			}
 		}(repo)
 	}
