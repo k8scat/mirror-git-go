@@ -17,6 +17,8 @@ import (
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
 
+var cloneDir string
+
 var (
 	sourceType string
 	targetType string
@@ -47,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cloneDir := "repos_" + time.Now().Format("20060102150405")
+	cloneDir = "repos_" + time.Now().Format("20060102150405")
 	go runMirror(sourceGit, targetGit)
 
 	ch := make(chan os.Signal, 1)
