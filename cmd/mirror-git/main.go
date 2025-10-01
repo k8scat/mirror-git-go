@@ -17,8 +17,6 @@ import (
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
 
-const cloneDir = "repos"
-
 var (
 	sourceType string
 	targetType string
@@ -49,6 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	cloneDir := "repos_" + time.Now().Format("20060102150405")
 	go runMirror(sourceGit, targetGit)
 
 	ch := make(chan os.Signal, 1)
@@ -57,6 +56,10 @@ func main() {
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 	<-ch
 	slog.Info("received interrupt signal, exiting...")
+
+	if err := os.RemoveAll(cloneDir); err != nil {
+		slog.Error("remove clone dir failed", "error", err, "clone_dir", cloneDir)
+	}
 }
 
 func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
@@ -65,7 +68,6 @@ func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
 			slog.Error("mirror panic", "error", r)
 		}
 	}()
-	defer os.RemoveAll(cloneDir)
 
 	allRepos, err := sourceGit.ListRepos()
 	if err != nil {
