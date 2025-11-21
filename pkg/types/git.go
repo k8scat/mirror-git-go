@@ -5,7 +5,7 @@ type Git interface {
 	Name() string
 
 	// GetRepoAddr returns the repository address
-	GetRepoAddr(repoName string) string
+	GetRepoAddr(pathWithNamespace string) string
 }
 
 type TargetGit interface {

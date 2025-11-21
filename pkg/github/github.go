@@ -6,18 +6,87 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
 
 var _ types.TargetGit = &GitHub{}
+var _ types.SourceGit = &GitHub{}
 
 type GitHub struct {
 	AccessToken string
 	Username    string
 	BaseAPI     string
+}
+
+// ListRepos implements types.SourceGit.
+func (g *GitHub) ListRepos() ([]types.Repo, error) {
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+	apiBaseURL := "https://api.github.com/user/repos"
+	perPage := 100
+	page := 1
+
+	var repos []types.Repo
+
+	for {
+		queryValues := url.Values{}
+		queryValues.Set("per_page", fmt.Sprintf("%d", perPage))
+		queryValues.Set("page", fmt.Sprintf("%d", page))
+		apiURL := apiBaseURL + "?" + queryValues.Encode()
+
+		req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Authorization", "Bearer "+g.AccessToken)
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to call GitHub API: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("GitHub API error: %v", resp.Status)
+		}
+
+		var rawRepos []struct {
+			Name        string `json:"name"`
+			FullName    string `json:"full_name"`
+			Description string `json:"description"`
+			Private     bool   `json:"private"`
+		}
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(&rawRepos); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode GitHub repos: %w", err)
+		}
+		resp.Body.Close() // Close before next request
+
+		for _, r := range rawRepos {
+			repos = append(repos, types.NewRepo(
+				r.Name,
+				r.FullName,
+				r.Description,
+				r.Private,
+			))
+		}
+
+		if len(rawRepos) < perPage {
+			break
+		}
+		page++
+	}
+
+	return repos, nil
 }
 
 func (g *GitHub) Name() string {
@@ -191,6 +260,6 @@ func (g *GitHub) CreateRepo(name string, desc string, private bool) error {
 	return nil
 }
 
-func (g *GitHub) GetRepoAddr(repoName string) string {
-	return fmt.Sprintf("https://%s:%s@github.com/%s/%s.git", g.Username, g.AccessToken, g.Username, repoName)
+func (g *GitHub) GetRepoAddr(pathWithNamespace string) string {
+	return fmt.Sprintf("https://%s:%s@github.com/%s.git", g.Username, g.AccessToken, pathWithNamespace)
 }

@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/k8scat/mirror-git-go/pkg/e_gitee_v8"
+	"github.com/k8scat/mirror-git-go/pkg/git"
+	"github.com/k8scat/mirror-git-go/pkg/gitee"
 	"github.com/k8scat/mirror-git-go/pkg/github"
 	"github.com/k8scat/mirror-git-go/pkg/gitlab"
 	"github.com/k8scat/mirror-git-go/pkg/local"
@@ -25,14 +28,16 @@ var (
 
 func main() {
 	flag.IntVar(&timeout, "timeout", 3600, "timeout in seconds")
-	flag.StringVar(&sourceType, "source", "gitee", "source git service (gitee)")
-	flag.StringVar(&targetType, "target", "github", "target git service (gitlab|github)")
+	flag.StringVar(&sourceType, "source", git.EGiteeV8, "source git service")
+	flag.StringVar(&targetType, "target", git.GitHub, "target git service")
 	flag.Parse()
 
 	var sourceGit types.SourceGit
 	switch sourceType {
-	case "gitee":
+	case git.EGiteeV8:
 		sourceGit = e_gitee_v8.NewEnterpriseGiteeV8FromEnv()
+	case git.GitHub:
+		sourceGit = github.NewGitHubFromEnv()
 	default:
 		slog.Error("invalid source type", "type", sourceType)
 		os.Exit(1)
@@ -40,18 +45,20 @@ func main() {
 
 	var targetGit types.TargetGit
 	switch targetType {
-	case "gitlab":
+	case git.GitLab:
 		targetGit = gitlab.NewGitLabFromEnv()
-	case "github":
+	case git.GitHub:
 		targetGit = github.NewGitHubFromEnv()
-	case "local":
+	case git.Local:
 		targetGit = &local.Local{}
+	case git.Gitee:
+		targetGit = gitee.NewGiteeFromEnv()
 	default:
 		slog.Error("invalid target type", "type", targetType)
 		os.Exit(1)
 	}
 
-	workDir := os.TempDir() + "/repos_" + time.Now().Format("20060102150405")
+	workDir := filepath.Join(os.TempDir(), "/repos_"+time.Now().Format("20060102150405"))
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		slog.Error("create work dir failed", "error", err, "work_dir", workDir)
 		os.Exit(1)
