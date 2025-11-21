@@ -1,14 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/k8scat/mirror-git-go/pkg/e_gitee_v8"
@@ -18,14 +17,14 @@ import (
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
 
-var cloneDir string
-
 var (
 	sourceType string
 	targetType string
+	timeout    int
 )
 
 func main() {
+	flag.IntVar(&timeout, "timeout", 3600, "timeout in seconds")
 	flag.StringVar(&sourceType, "source", "gitee", "source git service (gitee)")
 	flag.StringVar(&targetType, "target", "github", "target git service (gitlab|github)")
 	flag.Parse()
@@ -52,39 +51,39 @@ func main() {
 		os.Exit(1)
 	}
 
-	cloneDir = "repos_" + time.Now().Format("20060102150405")
-	go runMirror(sourceGit, targetGit)
+	workDir := os.TempDir() + "/repos_" + time.Now().Format("20060102150405")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		slog.Error("create work dir failed", "error", err, "work_dir", workDir)
+		os.Exit(1)
+	}
+	slog.Info("work dir created", "dir", workDir)
 
-	ch := make(chan os.Signal, 1)
-	defer close(ch)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
 
-	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
-	<-ch
-	slog.Info("received interrupt signal, exiting...")
+	err := runMirror(ctx, workDir, sourceGit, targetGit)
+	if err != nil {
+		slog.Error("mirror failed", "error", err)
+		os.Exit(1)
+	}
 
 	if targetType != "local" {
-		slog.Info("cleaning up clone directory", "dir", cloneDir)
-		if err := os.RemoveAll(cloneDir); err != nil {
-			slog.Error("remove clone dir failed", "error", err, "clone_dir", cloneDir)
+		slog.Info("cleaning up clone directory", "dir", workDir)
+		if err := os.RemoveAll(workDir); err != nil {
+			slog.Error("remove clone dir failed", "error", err, "clone_dir", workDir)
 		}
 	}
 }
 
-func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("mirror panic", "error", r)
-		}
-	}()
-
+func runMirror(ctx context.Context, workDir string, sourceGit types.SourceGit, targetGit types.TargetGit) (err error) {
 	allRepos, err := sourceGit.ListRepos()
 	if err != nil {
 		slog.Error("list repos failed", "error", err, "source", sourceType)
-		os.Exit(1)
+		return fmt.Errorf("list repos failed: %w", err)
 	}
 	if len(allRepos) == 0 {
 		slog.Info("no repos found", "source", sourceType)
-		return
+		return nil
 	}
 
 	slog.Info("total repos", "count", len(allRepos), "source", sourceType)
@@ -98,19 +97,29 @@ func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
 
 	// Process allRepos as needed
 	for _, repo := range allRepos {
+		// Check if context is already cancelled
+		select {
+		case <-ctx.Done():
+			slog.Warn("context cancelled, stopping repo processing", "error", ctx.Err())
+			goto waitForCompletion
+		default:
+		}
+
 		sem <- struct{}{} // Acquire a token
 
 		go func(r types.Repo) {
 			defer func() { <-sem }() // Release the token
 
-			err := mirrorGiteeRepo(repo, sourceGit, targetGit)
+			err := mirrorRepo(ctx, workDir, r, sourceGit, targetGit)
 			if err != nil {
 				failedReposLock.Lock()
-				failedRepos = append(failedRepos, []string{repo.GetPathWithNamespace(), err.Error()})
+				failedRepos = append(failedRepos, []string{r.GetPathWithNamespace(), err.Error()})
 				failedReposLock.Unlock()
 			}
 		}(repo)
 	}
+
+waitForCompletion:
 
 	// Wait for all goroutines to finish
 	for range maxWorkers {
@@ -123,12 +132,24 @@ func runMirror(sourceGit types.SourceGit, targetGit types.TargetGit) {
 			slog.Info("failed repo", "repo", r[0], "reason", r[1])
 		}
 	}
+	return nil
 }
 
-func mirrorGiteeRepo(repo types.Repo, source types.SourceGit, target types.TargetGit) error {
+func mirrorRepo(ctx context.Context, workDir string, repo types.Repo, source types.SourceGit, target types.TargetGit) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("mirror panic: %v", r)
+		}
+	}()
+
+	// Check if context is already cancelled
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled before starting: %w", err)
+	}
+
 	slog.Info("mirror repo", "repo", repo.GetPathWithNamespace())
 
-	repoDir := cloneDir + "/" + repo.GetPath() + "_" + time.Now().Format("20060102150405")
+	repoDir := workDir + "/" + repo.GetPath() + "_" + time.Now().Format("20060102150405")
 
 	gitUrl := source.GetRepoAddr(repo.GetPathWithNamespace())
 
@@ -140,10 +161,10 @@ func mirrorGiteeRepo(repo types.Repo, source types.SourceGit, target types.Targe
 	}
 
 	slog.Info("clone repo", "cmd", cloneCmd)
-	cmd := exec.Command(cloneCmd[0], cloneCmd[1:]...)
+	cmd := exec.CommandContext(ctx, cloneCmd[0], cloneCmd[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		slog.Error("clone repo failed", "error", err, "cmd", cloneCmd)
 		return fmt.Errorf("clone failed: %w", err)
@@ -169,7 +190,7 @@ func mirrorGiteeRepo(repo types.Repo, source types.SourceGit, target types.Targe
 			"git", "push", "--mirror", pushAddr,
 		}
 		slog.Info("push repo", "cmd", pushCmd)
-		cmd = exec.Command(pushCmd[0], pushCmd[1:]...)
+		cmd = exec.CommandContext(ctx, pushCmd[0], pushCmd[1:]...)
 		cmd.Dir = repoDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
