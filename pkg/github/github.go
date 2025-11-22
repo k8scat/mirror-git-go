@@ -260,6 +260,10 @@ func (g *GitHub) CreateRepo(name string, desc string, private bool) error {
 	return nil
 }
 
-func (g *GitHub) GetRepoAddr(pathWithNamespace string) string {
+func (g *GitHub) GetTargetRepoAddr(path string) string {
+	return fmt.Sprintf("https://%s:%s@github.com/%s/%s.git", g.Username, g.AccessToken, g.Username, path)
+}
+
+func (g *GitHub) GetSourceRepoAddr(pathWithNamespace string) string {
 	return fmt.Sprintf("https://%s:%s@github.com/%s.git", g.Username, g.AccessToken, pathWithNamespace)
 }

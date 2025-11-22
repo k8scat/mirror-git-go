@@ -186,6 +186,7 @@ func (g *EnterpriseGiteeV8) ListRepos() ([]types.Repo, error) {
 	return allRepos, nil
 }
 
-func (g *EnterpriseGiteeV8) GetRepoAddr(pathWithNamespace string) string {
+// GetSourceRepoAddr implements types.SourceGit.
+func (g *EnterpriseGiteeV8) GetSourceRepoAddr(pathWithNamespace string) string {
 	return fmt.Sprintf("https://%s:%s@gitee.com/%s.git", g.Username, g.AccessToken, pathWithNamespace)
 }

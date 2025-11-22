@@ -155,8 +155,9 @@ func (g *GitLab) CreateRepo(name, desc string, isPrivate bool) error {
 	return nil
 }
 
-func (g *GitLab) GetRepoAddr(repoName string) string {
-	return fmt.Sprintf("https://%s:%s@gitlab.com/%s/%s.git", g.Username, g.AccessToken, g.Username, repoName)
+// GetTargetRepoAddr implements types.TargetGit.
+func (g *GitLab) GetTargetRepoAddr(path string) string {
+	return fmt.Sprintf("https://%s:%s@gitlab.com/%s/%s.git", g.Username, g.AccessToken, g.Username, path)
 }
 
 // ListProtectedBranches lists all protected branches for a project

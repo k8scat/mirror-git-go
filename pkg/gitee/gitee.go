@@ -73,9 +73,9 @@ func (g *Gitee) CreateRepo(name string, desc string, private bool) error {
 	return nil
 }
 
-// GetRepoAddr implements types.TargetGit.
-func (g *Gitee) GetRepoAddr(repoName string) string {
-	return fmt.Sprintf("https://%s:%s@gitee.com/%s/%s.git", g.Username, g.AccessToken, g.Username, repoName)
+// GetTargetRepoAddr implements types.TargetGit.
+func (g *Gitee) GetTargetRepoAddr(path string) string {
+	return fmt.Sprintf("https://%s:%s@gitee.com/%s/%s.git", g.Username, g.AccessToken, g.Username, path)
 }
 
 // IsRepoExist implements types.TargetGit.

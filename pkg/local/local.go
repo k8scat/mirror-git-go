@@ -10,7 +10,7 @@ func (l *Local) CreateRepo(name string, desc string, private bool) error {
 	return nil
 }
 
-func (l *Local) GetRepoAddr(repoName string) string {
+func (l *Local) GetTargetRepoAddr(path string) string {
 	return ""
 }
 

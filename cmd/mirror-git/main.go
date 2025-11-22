@@ -158,7 +158,7 @@ func mirrorRepo(ctx context.Context, workDir string, repo types.Repo, source typ
 
 	repoDir := workDir + "/" + repo.GetPath() + "_" + time.Now().Format("20060102150405")
 
-	gitUrl := source.GetRepoAddr(repo.GetPathWithNamespace())
+	gitUrl := source.GetSourceRepoAddr(repo.GetPathWithNamespace())
 
 	var cloneCmd []string
 	if target.Name() == "local" {
@@ -191,7 +191,7 @@ func mirrorRepo(ctx context.Context, workDir string, repo types.Repo, source typ
 		}
 	}
 
-	pushAddr := target.GetRepoAddr(repo.GetPath())
+	pushAddr := target.GetTargetRepoAddr(repo.GetPath())
 	if pushAddr != "" {
 		pushCmd := []string{
 			"git", "push", "--mirror", pushAddr,
