@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ type GitHub struct {
 	AccessToken string
 	Username    string
 	BaseAPI     string
+	IsOrg       bool
 }
 
 // ListRepos implements types.SourceGit.
@@ -127,11 +129,12 @@ type CreateRepoMutationResponse struct {
 }
 
 // NewGitHub creates a new GitHub client
-func NewGitHub(username, accessToken string) *GitHub {
+func NewGitHub(username, accessToken string, isOrg bool) *GitHub {
 	return &GitHub{
 		Username:    username,
 		AccessToken: accessToken,
 		BaseAPI:     "https://api.github.com/graphql",
+		IsOrg:       isOrg,
 	}
 }
 
@@ -141,6 +144,7 @@ func NewGitHubFromEnv() *GitHub {
 		Username:    os.Getenv("GITHUB_USERNAME"),
 		AccessToken: os.Getenv("GITHUB_ACCESS_TOKEN"),
 		BaseAPI:     "https://api.github.com/graphql",
+		IsOrg:       os.Getenv("GITHUB_IS_ORG") == "true",
 	}
 }
 
@@ -225,38 +229,82 @@ func (g *GitHub) CreateRepo(name string, desc string, private bool) error {
 		return nil
 	}
 
-	mutation := `
-		mutation ($name: String!, $desc: String!, $isPrivate: RepositoryVisibility!) {
-			createRepository(input: {name: $name, description: $desc, visibility: $isPrivate}) {
-				clientMutationId
-				repository {
-					id
-				}
-			}
-		}
-	`
-
-	visibility := "PUBLIC"
-	if private {
-		visibility = "PRIVATE"
+	if g.IsOrg {
+		return g.createOrgRepo(name, desc, private)
 	}
+	return g.createUserRepo(name, desc, private)
+}
 
-	variables := map[string]any{
-		"name":      name,
-		"desc":      desc,
-		"isPrivate": visibility,
+func (g *GitHub) createOrgRepo(name string, desc string, private bool) error {
+	apiURL := fmt.Sprintf("https://api.github.com/orgs/%s/repos", g.Username)
+
+	payload := map[string]any{
+		"name":        name,
+		"description": desc,
+		"private":     private,
 	}
-
-	var response CreateRepoMutationResponse
-	err = g.graphql(mutation, variables, &response)
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to execute GraphQL mutation: %w", err)
+		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	if len(response.Errors) > 0 {
-		return fmt.Errorf("GraphQL errors: %v", response.Errors)
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.AccessToken))
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create org repo: %s", string(body))
+	}
+	return nil
+}
+
+func (g *GitHub) createUserRepo(name string, desc string, private bool) error {
+	apiURL := "https://api.github.com/user/repos"
+
+	payload := map[string]any{
+		"name":        name,
+		"description": desc,
+		"private":     private,
 	}
 
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.AccessToken))
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create user repo: %s", string(body))
+	}
 	return nil
 }
 
