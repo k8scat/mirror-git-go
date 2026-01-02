@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/k8scat/mirror-git-go/pkg/types"
 )
@@ -115,14 +116,31 @@ func (g *GitLab) IsRepoExist(repoName string) (bool, error) {
 	return false, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(b))
 }
 
+func processRepoName(name string) string {
+	name = strings.ReplaceAll(name, "-", " ")
+	name = strings.ReplaceAll(name, "_", " ")
+	parts := strings.Split(name, " ")
+	newParts := make([]string, 0)
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			newParts = append(newParts, part)
+		}
+	}
+	return strings.ToLower(strings.Join(newParts, "-"))
+}
+
 func (g *GitLab) CreateRepo(name, desc string, isPrivate bool) error {
 	visibility := "public"
 	if isPrivate {
 		visibility = "private"
 	}
 
+	repoName := processRepoName(name)
+	slog.Info("processed repo name", "name", name, "new_name", repoName)
+
 	data := CreateRepoRequest{
-		Name:        name,
+		Name:        repoName,
 		Description: desc,
 		Visibility:  visibility,
 	}
