@@ -70,6 +70,7 @@ type AccessLevel struct {
 }
 
 func (g *GitLab) IsRepoExist(repoName string) (bool, error) {
+	repoName = processRepoName(repoName)
 	// Get single project: GET /projects/:id
 	// Use URL encoding for the project path
 	path := url.QueryEscape(fmt.Sprintf("%s/%s", g.Username, repoName))
@@ -90,14 +91,13 @@ func (g *GitLab) IsRepoExist(repoName string) (bool, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		project := g.Username + "/" + repoName
-		branches, err := g.ListProtectedBranches(project)
+		branches, err := g.ListProtectedBranches(path)
 		if err != nil {
 			slog.Error("list protected branches failed", "error", err, "repo", repoName)
 		} else {
 			for _, branch := range branches {
 				slog.Info("unprotected branch", "repo", repoName, "branch", branch.Name)
-				if err := g.UnprotectBranch(project, branch.Name); err != nil {
+				if err := g.UnprotectBranch(path, branch.Name); err != nil {
 					slog.Error("unprotect branch failed", "error", err, "repo", repoName, "branch", branch.Name)
 				}
 			}
@@ -137,7 +137,6 @@ func (g *GitLab) CreateRepo(name, desc string, isPrivate bool) error {
 	}
 
 	repoName := processRepoName(name)
-	slog.Info("processed repo name", "name", name, "new_name", repoName)
 
 	data := CreateRepoRequest{
 		Name:        repoName,
@@ -175,6 +174,7 @@ func (g *GitLab) CreateRepo(name, desc string, isPrivate bool) error {
 
 // GetTargetRepoAddr implements types.TargetGit.
 func (g *GitLab) GetTargetRepoAddr(path string) string {
+	path = processRepoName(path)
 	return fmt.Sprintf("https://%s:%s@gitlab.com/%s/%s.git", g.Username, g.AccessToken, g.Username, path)
 }
 
